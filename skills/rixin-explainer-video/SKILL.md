@@ -96,3 +96,6 @@ python tools/rixin_video.py render <id> <KEY>            # 竖横两版渲染(E 
 - 爆炸图：JOHO 中转站 gpt-image-2 生成**无文字**等轴测爆炸图（渲染版 + 白线稿版），图片用 `mixBlendMode: lighten` 去掉底色框；按行亮度切出各层（`EX_BANDS`），讲到哪层哪层变蓝、其余变暗。标注全部矢量叠加。
 - 示例数据要标 "EXAMPLE 示例数据"，引脚标"以实际原理图为准"。
 - 混音：`mix_music.py`，`VOICE=1` 时人声 -16 LUFS、配乐 -32。
+
+## 长视频 / 拆解视频（2026-11 起优先用）
+1–3 分钟的横版拆解、讲解视频，用 skill `hybrid-ai-video` 的「夜光实验室」风格（`references/lab-style.md`）：AI 真实镜头铺底 + 毛玻璃卡片 + 超大字，机器人在左下角朝右讲解（约 290px，不挡内容），钩子只留一屏，配乐卡鼓点。参考成片 `智能药盒拆解_锐新科技_V3_16x9.mp4`，代码 `remotion/src/long/v3/`。本 skill 的方格纸 8 段模板仍用于 55–70 秒的短科普。
