@@ -1,0 +1,325 @@
+{
+ "meta": {
+  "brand": "锐新科技",
+  "栏目": "单片机科普",
+  "watermark": "@锐新科技",
+  "source": "信息来源：锐新科技整理（STM32 定时器通用原理）",
+  "mascot": "rixin",
+  "theme": "paper",
+  "voice": "zh_male_zhengtaikp",
+  "视频标题（发布用）": "单片机只会输出 0 和 1，灯怎么能「半亮」？一分钟看懂 PWM",
+  "decor": "electronic"
+ },
+ "beats": [
+  {
+   "id": "p1",
+   "scene": "hook",
+   "text": "单片机只会输出 0 和 1，",
+   "pose": "surprised",
+   "sfx": "ping"
+  },
+  {
+   "id": "p2",
+   "scene": "hook",
+   "text": "灯怎么能「半亮」？",
+   "pose": "think",
+   "sfx": "pop"
+  },
+  {
+   "id": "p3",
+   "scene": "valid",
+   "text": "秘诀只有一个：飞快地开关。",
+   "pose": "check",
+   "sfx": "stamp"
+  },
+  {
+   "id": "p4",
+   "scene": "valid",
+   "text": "引脚只有 3.3V 或 0V。",
+   "pose": "check",
+   "sfx": "pop"
+  },
+  {
+   "id": "p5",
+   "scene": "demoA",
+   "text": "打个比方：亮一下、灭一下，叫一个周期。",
+   "pose": "none",
+   "sfx": "whoosh"
+  },
+  {
+   "id": "p6",
+   "scene": "demoA",
+   "text": "亮的时间占多少，就叫占空比。",
+   "pose": "none",
+   "sfx": "page"
+  },
+  {
+   "id": "p7",
+   "scene": "demoA",
+   "text": "3.3V × 50%，平均约 1.65V。",
+   "pose": "none",
+   "sfx": "page"
+  },
+  {
+   "id": "p8",
+   "scene": "chain",
+   "text": "那为什么看不出闪？秘密在频率。",
+   "pose": "think",
+   "sfx": "whoosh"
+  },
+  {
+   "id": "p9",
+   "scene": "chain",
+   "text": "每秒闪 5 次，你看得一清二楚；",
+   "pose": "think",
+   "sfx": "pop"
+  },
+  {
+   "id": "p10",
+   "scene": "chain",
+   "text": "每秒 1000 次，眼睛只看到平均亮度。",
+   "pose": "check",
+   "sfx": "pop"
+  },
+  {
+   "id": "p11",
+   "scene": "demoB",
+   "text": "定时器从 0 数到 999，再重来。",
+   "pose": "surprised",
+   "sfx": "boom"
+  },
+  {
+   "id": "p12",
+   "scene": "demoB",
+   "text": "数到 500 就翻转，占空比 50%。",
+   "pose": "check",
+   "sfx": "pop"
+  },
+  {
+   "id": "p13",
+   "scene": "demoB",
+   "text": "把比较值改成 200，",
+   "pose": "check",
+   "sfx": "whoosh"
+  },
+  {
+   "id": "p14",
+   "scene": "demoB",
+   "text": "占空比就变成 20%，灯更暗。",
+   "pose": "check",
+   "sfx": "ping"
+  },
+  {
+   "id": "p15",
+   "scene": "check",
+   "text": "PWM 无处不在，最常见五种用法：",
+   "pose": "point",
+   "sfx": "whoosh"
+  },
+  {
+   "id": "p16",
+   "scene": "check",
+   "text": "第一，呼吸灯。",
+   "pose": "point",
+   "sfx": "tick"
+  },
+  {
+   "id": "p17",
+   "scene": "check",
+   "text": "第二，舵机转角。",
+   "pose": "point",
+   "sfx": "tick"
+  },
+  {
+   "id": "p18",
+   "scene": "check",
+   "text": "第三，小车调速。",
+   "pose": "point",
+   "sfx": "tick"
+  },
+  {
+   "id": "p19",
+   "scene": "check",
+   "text": "第四，蜂鸣器音调。",
+   "pose": "point",
+   "sfx": "tick"
+  },
+  {
+   "id": "p20",
+   "scene": "check",
+   "text": "第五，屏幕调光。",
+   "pose": "point",
+   "sfx": "tick"
+  },
+  {
+   "id": "p21",
+   "scene": "check",
+   "text": "一句话：占空比管亮度，频率管闪不闪。",
+   "pose": "check",
+   "sfx": "pop"
+  },
+  {
+   "id": "p22",
+   "scene": "outro",
+   "text": "关注锐新科技，",
+   "pose": "wave",
+   "sfx": "whoosh"
+  },
+  {
+   "id": "p23",
+   "scene": "outro",
+   "text": "下集：引脚直接接电机会怎样？我们下期见！",
+   "pose": "wave",
+   "sfx": "pop"
+  }
+ ],
+ "scenes": {
+  "hook": {
+   "title": [
+    {
+     "t": "灯怎么"
+    },
+    {
+     "t": "半亮",
+     "hl": true
+    }
+   ],
+   "badges": [
+    "0",
+    "1",
+    "3.3V",
+    "0V",
+    "亮",
+    "灭"
+   ],
+   "chip": "只有全亮和全灭",
+   "bubble": "怎么变暗？"
+  },
+  "valid": {
+   "title": [
+    {
+     "t": "秘诀："
+    },
+    {
+     "t": "飞快开关",
+     "hl": true
+    }
+   ],
+   "icon": "wave",
+   "stamp": "PWM",
+   "tag": "脉冲宽度调制",
+   "bubble": "快速开关"
+  },
+  "chain": {
+   "title": [
+    {
+     "t": "看不出"
+    },
+    {
+     "t": "闪",
+     "hl": true
+    }
+   ],
+   "mode": "flow",
+   "cards": [
+    {
+     "icon": "led",
+     "text": "5 次/秒 看得见"
+    },
+    {
+     "icon": "sensor",
+     "text": "100 次/秒 开始模糊"
+    },
+    {
+     "icon": "screen",
+     "text": "1000 次/秒 只见平均"
+    }
+   ]
+  },
+  "check": {
+   "title": [
+    {
+     "t": "PWM"
+    },
+    {
+     "t": "5种用法",
+     "hl": true
+    }
+   ],
+   "header": "PWM 常见用途",
+   "items": [
+    "呼吸灯",
+    "舵机转角",
+    "小车调速",
+    "蜂鸣器音调",
+    "屏幕调光"
+   ],
+   "titleSize": 104
+  },
+  "outro": {
+   "title": [
+    {
+     "t": "关注"
+    },
+    {
+     "t": "锐新科技",
+     "hl": true
+    }
+   ],
+   "sticker": "锐新科技",
+   "bubble": "下集：直接接电机？"
+  },
+  "demoA": {
+   "title": [
+    {
+     "t": "三个"
+    },
+    {
+     "t": "词",
+     "hl": true
+    }
+   ],
+   "parts": [
+    "led",
+    "scope"
+   ],
+   "terms": [
+    "周期",
+    "占空比",
+    "平均电压"
+   ],
+   "duty": [
+    {
+     "beat": 0,
+     "duty": 0.5
+    }
+   ]
+  },
+  "demoB": {
+   "title": [
+    {
+     "t": "改一个"
+    },
+    {
+     "t": "数",
+     "hl": true
+    }
+   ],
+   "parts": [
+    "led",
+    "scope",
+    "counter"
+   ],
+   "duty": [
+    {
+     "beat": 0,
+     "duty": 0.5
+    },
+    {
+     "beat": 2,
+     "duty": 0.2
+    }
+   ]
+  }
+ }
+}

@@ -1,0 +1,117 @@
+// Electronic decoration for the 锐新科技 look: a PCB-style strip of parts with travelling signal pulses, plus faint side traces.
+// Kept outside every text area (portrait: bottom strip + outer edges; landscape: whole background very faint + a mini strip at the top).
+import React from 'react';
+import {useCurrentFrame} from 'remotion';
+
+const INK = '#23323C', TRACE = '#9DB3BB', FAINT = '#C6D4D9', ORANGE = '#F29A3A', GREEN = '#1F8A5B', RED = '#E2574C', BLUE = '#3C7DE0', YELLOW = '#FFC93C';
+const sw = {fill: 'none', stroke: INK, strokeWidth: 3.5, strokeLinecap: 'round', strokeLinejoin: 'round'} as const;
+
+// ---- small parts, drawn around (0,0) with the trace passing through y=0 ----
+const Resistor: React.FC = () => (
+  <g>
+    <rect x={-46} y={-17} width={92} height={34} rx={14} {...sw} fill="#F1D9A8" />
+    {[-22, -8, 6].map((x, i) => <rect key={x} x={x} y={-17} width={7} height={34} fill={[RED, '#8A4B2A', ORANGE][i]} stroke="none" />)}
+    <rect x={26} y={-17} width={5} height={34} fill="#C9A646" stroke="none" />
+  </g>
+);
+const Capacitor: React.FC = () => (
+  <g>
+    <line x1={-34} y1={0} x2={-8} y2={0} stroke={TRACE} strokeWidth={6} />
+    <line x1={8} y1={0} x2={34} y2={0} stroke={TRACE} strokeWidth={6} />
+    <rect x={-12} y={-30} width={9} height={60} rx={3} {...sw} fill="#8CC8FF" />
+    <rect x={3} y={-30} width={9} height={60} rx={3} {...sw} fill="#8CC8FF" />
+  </g>
+);
+const Chip: React.FC = () => (
+  <g>
+    {[-30, -10, 10, 30].map((x) => <g key={x}><rect x={x - 4} y={-52} width={8} height={14} fill="#B8C2C8" stroke={INK} strokeWidth={2.5} /><rect x={x - 4} y={38} width={8} height={14} fill="#B8C2C8" stroke={INK} strokeWidth={2.5} /></g>)}
+    {[-24, -8, 8, 24].map((y) => <g key={y}><rect x={-64} y={y - 4} width={14} height={8} fill="#B8C2C8" stroke={INK} strokeWidth={2.5} /><rect x={50} y={y - 4} width={14} height={8} fill="#B8C2C8" stroke={INK} strokeWidth={2.5} /></g>)}
+    <rect x={-50} y={-38} width={100} height={76} rx={8} {...sw} fill="#2E4553" />
+    <circle cx={-36} cy={-24} r={5} fill="#7FA3B5" />
+    <text x={4} y={8} textAnchor="middle" fontFamily="'Microsoft YaHei',sans-serif" fontWeight={900} fontSize={26} fill="#fff">MCU</text>
+  </g>
+);
+const Led: React.FC<{f: number}> = ({f}) => {
+  const g = 0.55 + 0.45 * Math.sin(f / 7);
+  return (
+    <g>
+      <circle cx={0} cy={0} r={44} fill={RED} opacity={0.18 * g} />
+      <path d="M-20 -24 L-20 24 L20 0 Z" {...sw} fill={RED} />
+      <line x1={22} y1={-26} x2={22} y2={26} stroke={INK} strokeWidth={5} strokeLinecap="round" />
+      <path d="M26 -34 L44 -52 M34 -22 L52 -40" stroke={ORANGE} strokeWidth={4} strokeLinecap="round" opacity={0.5 + 0.5 * g} />
+    </g>
+  );
+};
+const Crystal: React.FC = () => (
+  <g>
+    <rect x={-30} y={-20} width={60} height={40} rx={10} {...sw} fill="#E8EEF0" />
+    <path d="M-12 -8 H12 M-12 0 H12 M-12 8 H12" stroke="#7FA3B5" strokeWidth={3} strokeLinecap="round" />
+  </g>
+);
+const Wave: React.FC<{f: number}> = ({f}) => {
+  const off = (f * 2) % 60;
+  return (
+    <g>
+      <rect x={-52} y={-30} width={104} height={60} rx={10} {...sw} fill="#17232B" />
+      <clipPath id="wv"><rect x={-46} y={-24} width={92} height={48} /></clipPath>
+      <g clipPath="url(#wv)"><path d={`M${-100 - off} 14 h15 v-28 h15 v28 h15 v-28 h15 v28 h15 v-28 h15 v28 h15 v-28 h15 v28 h15 v-28 h15 v28 h15 v-28 h15 v28`} fill="none" stroke="#6BFFA8" strokeWidth={3.5} /></g>
+    </g>
+  );
+};
+
+type Part = {x: number; el: React.ReactNode};
+
+const Strip: React.FC<{f: number; y: number; x0: number; x1: number; parts: Part[]}> = ({f, y, x0, x1, parts}) => {
+  const len = x1 - x0;
+  return (
+    <g transform={`translate(0,${y})`}>
+      <line x1={x0} y1={0} x2={x1} y2={0} stroke={TRACE} strokeWidth={6} strokeLinecap="round" />
+      {parts.map((p, i) => <g key={i} transform={`translate(${p.x},0)`}>{p.el}</g>)}
+      {[0, 1, 2, 3].map((k) => {
+        const t = ((f * 4 + k * len / 4) % len);
+        return <circle key={k} cx={x0 + t} cy={0} r={6} fill={ORANGE} opacity={0.9} />;
+      })}
+      {[x0, x1].map((x) => <circle key={x} cx={x} cy={0} r={9} fill="#fff" stroke={INK} strokeWidth={3.5} />)}
+    </g>
+  );
+};
+
+// vertical edge trace with a couple of right-angle jogs and travelling pulses
+const SideTrace: React.FC<{f: number; x: number; y0: number; y1: number; jog: number; phase: number}> = ({f, x, y0, y1, jog, phase}) => {
+  const mid1 = y0 + (y1 - y0) * 0.33, mid2 = y0 + (y1 - y0) * 0.66;
+  const d = `M${x} ${y0} V${mid1} H${x + jog} V${mid2} H${x} V${y1}`;
+  const len = (y1 - y0) + Math.abs(jog) * 4;
+  return (
+    <g>
+      <path d={d} fill="none" stroke={FAINT} strokeWidth={6} strokeLinecap="round" strokeLinejoin="round" />
+      {[mid1, mid2].map((y) => <circle key={y} cx={x + (y === mid1 ? jog : 0)} cy={y} r={7} fill="#fff" stroke={FAINT} strokeWidth={4} />)}
+      <path d={d} fill="none" stroke={ORANGE} strokeWidth={6} strokeLinecap="round" strokeLinejoin="round" pathLength={len}
+        strokeDasharray={`16 ${len}`} strokeDashoffset={-(((f * 5 + phase) % len))} opacity={0.75} />
+    </g>
+  );
+};
+
+export const ElecDecor: React.FC<{variant: 'portrait' | 'land'}> = ({variant}) => {
+  const f = useCurrentFrame();
+  if (variant === 'portrait') {
+    return (
+      <svg width={1080} height={1920} style={{position: 'absolute', inset: 0, zIndex: 3, pointerEvents: 'none'}}>
+        <SideTrace f={f} x={14} y0={260} y1={1700} jog={14} phase={0} />
+        <SideTrace f={f} x={1066} y0={260} y1={1700} jog={-14} phase={520} />
+        <Strip f={f} y={1838} x0={30} x1={1050} parts={[
+          {x: 130, el: <Resistor />}, {x: 300, el: <Capacitor />}, {x: 480, el: <Chip />}, {x: 660, el: <Led f={f} />}, {x: 810, el: <Crystal />}, {x: 950, el: <Wave f={f} />},
+        ]} />
+      </svg>
+    );
+  }
+  // landscape: whole background very faint + a mini strip along the top (between the brand chip and the board)
+  return (
+    <svg width={1920} height={1080} style={{position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none'}}>
+      <SideTrace f={f} x={26} y0={150} y1={1020} jog={18} phase={0} />
+      <SideTrace f={f} x={1044} y0={150} y1={1020} jog={-18} phase={300} />
+      <g transform="translate(452,64) scale(0.6)">
+        <Strip f={f} y={0} x0={-40} x1={560} parts={[{x: 70, el: <Resistor />}, {x: 220, el: <Chip />}, {x: 380, el: <Led f={f} />}, {x: 500, el: <Crystal />}]} />
+      </g>
+    </svg>
+  );
+};

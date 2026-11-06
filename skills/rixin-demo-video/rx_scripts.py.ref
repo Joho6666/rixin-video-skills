@@ -1,0 +1,148 @@
+"""Script JSON + narration lines for the 锐新科技 batch (DMA, 51, sensors). FOC lives in the same shape (see remotion/src/scripts/foc.json).
+Usage: python -I tools/rx_scripts.py   (run from fcc-video). Writes remotion/src/scripts/<id>.json and remotion/src/<id>_lines.json."""
+import json
+
+T = lambda *a: [{"t": x} if isinstance(x, str) else {"t": x[0], "hl": True} for x in a]
+POSE = {'hook': [('surprised', 'ping'), ('think', 'pop')], 'valid': [('check', 'stamp'), ('check', 'pop')],
+        'analogy': [('none', 'whoosh'), ('none', 'page'), ('none', 'page')], 'chain': [('think', 'whoosh'), ('think', 'pop'), ('think', 'pop')],
+        'impact': [('surprised', 'boom'), ('check', 'pop')], 'timeline': [('check', 'whoosh'), ('check', 'ping')], 'outro': [('wave', 'whoosh'), ('wave', 'pop')]}
+
+
+def beats(prefix, rows):
+    out, cnt, n = [], {}, 0
+    for sc, sub, sp in rows:
+        n += 1
+        i = cnt.get(sc, 0)
+        cnt[sc] = i + 1
+        if sc in POSE:
+            po, sf = POSE[sc][min(i, len(POSE[sc]) - 1)]
+        elif sc.startswith('demo'):
+            po, sf = (['think', 'check', 'check', 'check'][min(i, 3)], 'whoosh' if i == 0 else 'pop')
+        else:
+            po, sf = ('point', 'whoosh') if i == 0 else (('check', 'pop') if sub.startswith(('一句话', '八位', '四类')) else ('point', 'tick'))
+        out.append((f"{prefix}{n}", sc, sub, sp, po, sf))
+    return out
+
+
+META = lambda title, src: {"brand": "锐新科技", "栏目": "单片机科普", "watermark": "@锐新科技", "source": "信息来源：" + src, "mascot": "rixin", "theme": "paper",
+                           "voice": "zh_male_zhengtaikp", "decor": "electronic", "视频标题（发布用）": title}
+
+
+def write(id_, prefix, rows, scenes, title, src):
+    B = beats(prefix, rows)
+    js = {"meta": META(title, src), "beats": [{"id": i, "scene": sc, "text": t, "pose": po, "sfx": sf} for i, sc, t, _, po, sf in B], "scenes": scenes}
+    open(f'remotion/src/scripts/{id_}.json', 'w', encoding='utf-8', newline='\n').write(json.dumps(js, ensure_ascii=False, indent=1))
+    open(f'remotion/src/{id_}_lines.json', 'w', encoding='utf-8', newline='\n').write(json.dumps([{"id": i, "text": (sp or t)} for i, _, t, sp, _, _ in B], ensure_ascii=False, indent=1))
+    print(id_, len(B), 'beats')
+
+
+OUT = lambda b: {"title": T("关注", ("锐新科技",)), "sticker": "锐新科技", "bubble": b}
+
+# ---------------- DMA ----------------
+write('dma', 'd', [
+    ('hook', '串口收数据，为什么总是丢几个字？', None),
+    ('hook', '秘密在于：谁来搬数据。', None),
+    ('valid', 'DMA，全称直接存储器访问。', 'D M A，全称直接存储器访问。'),
+    ('valid', '就是一个专门搬数据的搬运工。', None),
+    ('demoA', '串口每收到一个字节，先放进数据寄存器。', None),
+    ('demoA', '可这个格子只能放一个，下一个字节马上就到。', None),
+    ('demoA', '以前是 CPU 亲自搬，一忙就来不及，', '以前是 C P U 亲自搬，一忙就来不及，'),
+    ('demoA', '新字节把旧的冲掉，数据就丢了。', None),
+    ('chain', 'DMA 只要交代三句话，第一，从哪搬：串口。', 'D M A 只要交代三句话，第一，从哪搬：串口。'),
+    ('chain', '第二，搬到哪：内存里的数组。', None),
+    ('chain', '第三，搬几个：十个字节。', None),
+    ('demoB', '之后字节一到，DMA 自动搬，一个接一个排好。', '之后字节一到，D M A 自动搬，一个接一个排好。'),
+    ('demoB', 'CPU 全程干自己的活，', 'C P U 全程干自己的活，'),
+    ('demoB', '搬完十个，才通知它一次。', None),
+    ('timeline', '数据长度不固定怎么办？加上串口空闲中断。', None),
+    ('timeline', '线路一停，就知道一帧收完了。', None),
+    ('check', 'DMA 用处很多，常见五种：', 'D M A 用处很多，常见五种：'),
+    ('check', '第一，串口收发数据。', None),
+    ('check', '第二，ADC 连续采样。', '第二，A D C 连续采样。'),
+    ('check', '第三，SPI 刷新屏幕。', '第三，S P I 刷新屏幕。'),
+    ('check', '第四，输出 PWM 波形。', '第四，输出 P W M 波形。'),
+    ('check', '第五，内存搬内存。', None),
+    ('check', '一句话：搬运交给 DMA，CPU 只管处理。', '一句话：搬运交给 D M A，C P U 只管处理。'),
+    ('outro', '关注锐新科技，', None),
+    ('outro', '下集：51 单片机，入门第一课。我们下期见！', '下集：五一单片机，入门第一课。我们下期见！')],
+    {"hook": {"title": T("串口", ("丢字",)), "badges": ["H", "E", "?", "L", "O", "?"], "chip": "明明发了完整的", "bubble": "谁来搬？"},
+     "valid": {"title": T("DMA 是", ("搬运工",)), "icon": "box", "stamp": "DMA", "tag": "直接存储器访问", "bubble": "专职搬数据"},
+     "demoA": {"title": T("CPU 搬", ("丢字",)), "kind": "dma", "mode": "cpu", "period": 30, "start": 16, "busy": [[70, 170], [230, 320]]},
+     "chain": {"title": T("三句话", ("交代",)), "mode": "flow", "cards": [{"icon": "wireless", "text": "从哪搬：串口"}, {"icon": "box", "text": "搬到哪：内存数组"}, {"icon": "refresh", "text": "搬几个：10 个"}]},
+     "demoB": {"title": T("DMA", ("自动搬",)), "kind": "dma", "mode": "dma", "period": 30, "start": 16, "busy": [[70, 170], [230, 320]]},
+     "timeline": {"title": T("不定长", ("数据",)), "nodes": [{"d": "字节连续到达", "t": "DMA 自动存进内存"}, {"d": "线路空闲一小会", "t": "触发空闲中断", "now": True}, {"d": "CPU 取走一整帧", "t": "长度不用事先知道"}], "chip": "收完才通知"},
+     "check": {"title": T("DMA", ("5种用法",)), "header": "DMA 常见用途", "items": ["串口收发数据", "ADC 连续采样", "SPI 刷新屏幕", "输出 PWM 波形", "内存搬内存"], "titleSize": 104},
+     "outro": OUT("下集：51 入门第一课")},
+    "串口收数据总丢字？一分钟看懂 DMA", "锐新科技整理（STM32 DMA 通用原理）")
+
+# ---------------- 51 ----------------
+write('m51', 'o', [
+    ('hook', '几块钱的芯片，凭什么是无数工科生的第一课？', None),
+    ('hook', '答案是：51 单片机。', '答案是：五一单片机。'),
+    ('valid', '51 单片机，就是把一台小电脑装进一颗芯片。', '五一单片机，就是把一台小电脑装进一颗芯片。'),
+    ('valid', '常见型号 STC89C52，一共 40 只脚。', '常见型号 S T C 八九 C 五二，一共四十只脚。'),
+    ('analogy', '打个比方：CPU 是大脑，负责计算和判断。', '打个比方：C P U 是大脑，负责计算和判断。'),
+    ('analogy', 'Flash 是书架，存着你写的程序，8KB。', 'Flash 是书架，存着你写的程序，八千字节。'),
+    ('analogy', 'RAM 是草稿纸，存计算的中间结果，512 字节。', 'RAM 是草稿纸，存计算的中间结果，五百一十二字节。'),
+    ('chain', '它是 8 位机，一次处理 8 个 0 或 1。', '它是八位机，一次处理八个零或一。'),
+    ('chain', 'P0 到 P3 四组引脚，每组 8 根，共 32 个。', 'P 零到 P 三四组引脚，每组八根，共三十二个。'),
+    ('chain', '往引脚写 1 是高电平，写 0 是低电平。', '往引脚写一是高电平，写零是低电平。'),
+    ('demoA', '往 P2 写 0xFE，二进制 1111 1110，', '往 P 二写十六进制 F E，二进制是一一一一一一一零，'),
+    ('demoA', '最低位是 0，低电平，那盏灯就亮了。', '最低位是零，低电平，那盏灯就亮了。'),
+    ('demoA', '让这个 0 依次移动，就成了流水灯。', '让这个零依次移动，就成了流水灯。'),
+    ('timeline', '程序在电脑上用 C 语言写，', None),
+    ('timeline', '一根 USB 线下载进芯片，上电就运行。', '一根 U S B 线下载进芯片，上电就运行。'),
+    ('check', '入门为什么先学 51？五个原因：', '入门为什么先学五一？五个原因：'),
+    ('check', '第一，原理简单，一目了然。', None),
+    ('check', '第二，价格便宜，几块钱一颗。', None),
+    ('check', '第三，资料很多，好找答案。', None),
+    ('check', '第四，外设少，不容易乱。', None),
+    ('check', '第五，遥控器、电饭煲里都有它。', None),
+    ('check', '八位 CPU 加存储器，加三十二个 I/O，就是 51。', '八位 C P U 加存储器，加三十二个输入输出口，就是五一单片机。'),
+    ('outro', '关注锐新科技，', None),
+    ('outro', '下集：STM32 比 51 强在哪？我们下期见！', '下集：S T M 三十二，比五一强在哪？我们下期见！')],
+    {"hook": {"title": T("入门", ("第一课",)), "badges": ["40脚", "8位", "12MHz", "8KB", "512B", "32个IO"], "chip": "几块钱一颗", "bubble": "51 是啥？"},
+     "valid": {"title": T("51 =", ("小电脑",)), "icon": "chip", "stamp": "51", "tag": "40 只脚 · 8 位", "bubble": "一颗芯片"},
+     "analogy": {"title": T("三个", ("部件",)), "rows": [{"l": {"icon": "chip", "label": "CPU"}, "r": {"icon": "person", "label": "大脑"}}, {"l": {"icon": "doc", "label": "Flash 8KB"}, "r": {"icon": "box", "label": "书架"}}, {"l": {"icon": "clipboard", "label": "RAM 512B"}, "r": {"icon": "doc", "label": "草稿纸"}}]},
+     "chain": {"title": T("引脚", ("怎么用",)), "mode": "plain", "cards": [{"icon": "chip", "text": "8 位：一次 8 个 0/1"}, {"icon": "plug", "text": "P0~P3：共 32 个"}, {"icon": "bolt", "text": "写 1 高 · 写 0 低"}]},
+     "demoA": {"title": T("流水灯", ("原理",)), "kind": "port", "phases": [{"beat": 0, "mode": "fixed", "value": 254}, {"beat": 2, "mode": "chase", "value": 254}]},
+     "timeline": {"title": T("程序", ("怎么进去",)), "nodes": [{"d": "电脑上写 C 语言", "t": "用编程软件编译"}, {"d": "USB 线下载", "t": "写进 Flash", "now": True}, {"d": "上电自动运行", "t": "灯就按程序亮"}], "chip": "写 → 下 → 跑"},
+     "check": {"title": T("入门选", ("51",)), "header": "为什么入门先学 51", "items": ["原理简单一目了然", "价格便宜几块钱", "资料多好找答案", "外设少不容易乱", "家电里到处都有"], "titleSize": 104},
+     "outro": OUT("下集：STM32 强在哪")},
+    "几块钱的芯片，凭什么是工科生第一课？一分钟看懂 51 单片机", "锐新科技整理（MCS-51 / STC89C52 通用资料）")
+
+# ---------------- sensors ----------------
+write('sens', 'k', [
+    ('hook', '做毕设不知道选什么传感器？', None),
+    ('hook', '四种最常见的，一次看懂。', None),
+    ('valid', '万能公式：传感器采集，单片机判断，', None),
+    ('valid', '屏幕显示，或者让继电器去执行。', None),
+    ('demoA', '第一类：光敏电阻测光照，光线越强，电阻越小。', None),
+    ('demoA', '分压变成零到三点三伏的连续电压，', None),
+    ('demoA', '接 ADC 引脚，就能读出亮度。', '接 A D C 引脚，就能读出亮度。'),
+    ('chain', '第二类：DHT11 测温湿度，只用一根线。', '第二类：D H T 十一测温湿度，只用一根线。'),
+    ('chain', '内部小芯片把数据打包成四十位，', None),
+    ('chain', '一根 DATA 线接 GPIO，按时序读出来。', '一根数据线接普通引脚，按时序读出来。'),
+    ('demoB', '第三类：超声波测距，左边发声波，右边听回声。', None),
+    ('demoB', 'Trig 发十微秒脉冲，Echo 高电平的宽度，就是往返时间。', '触发脚发十微秒脉冲，回波脚高电平的宽度，就是往返时间。'),
+    ('demoB', '距离等于时间乘声速，再除以二。', None),
+    ('impact', '第四类：MQ-2 烟雾传感器，遇到烟雾，气敏电阻变小。', '第四类：M Q 二烟雾传感器，遇到烟雾，气敏电阻变小。'),
+    ('impact', '板载比较器对比阈值，超标就输出报警信号。', None),
+    ('check', '这四种搭一搭，就是很多毕设的骨架：', None),
+    ('check', '第一，智能农业大棚。', None),
+    ('check', '第二，厨房燃气报警。', None),
+    ('check', '第三，感应垃圾桶。', None),
+    ('check', '第四，护眼智能台灯。', None),
+    ('check', '第五，冷链小箱监控。', None),
+    ('check', '四类传感器，三种信号，一套公式。', None),
+    ('outro', '关注锐新科技，', None),
+    ('outro', '下集：多个传感器怎么接？我们下期见！', None)],
+    {"hook": {"title": T("毕设", ("选传感器",)), "badges": ["光敏", "DHT11", "超声波", "MQ-2", "OLED", "继电器"], "chip": "四类就够用", "bubble": "怎么选？"},
+     "valid": {"title": T("万能", ("公式",)), "icon": "sensor", "stamp": "采集", "tag": "采集 → 判断 → 执行", "bubble": "三步走"},
+     "demoA": {"title": T("光敏", ("电阻",)), "kind": "adc", "light": [{"beat": 0, "v": 0.15}, {"beat": 1, "v": 0.9}]},
+     "chain": {"title": T("DHT11", ("一根线",)), "mode": "flow", "cards": [{"icon": "sensor", "text": "感湿电容 + 测温电阻"}, {"icon": "chip", "text": "打包成 40 位数据"}, {"icon": "plug", "text": "一根 DATA 线读出"}]},
+     "demoB": {"title": T("超声波", ("测距",)), "kind": "echo", "dist": [{"beat": 0, "v": 28}, {"beat": 2, "v": 12}]},
+     "impact": {"title": T("烟雾", ("报警",)), "from": {"icon": "sensor", "label": "烟雾浓度升高"}, "mid": {"icon": "chip", "label": "比较器对比阈值"}, "result": "超标就报警"},
+     "check": {"title": T("毕设组合", ("5个",)), "header": "常见毕设组合", "items": ["智能农业大棚", "厨房燃气报警", "感应垃圾桶", "护眼智能台灯", "冷链小箱监控"], "titleSize": 104},
+     "outro": OUT("下集：多传感器接线")},
+    "做单片机毕设不知道选什么模块？一分钟看懂 4 类传感器", "锐新科技整理（传感器通用资料）")

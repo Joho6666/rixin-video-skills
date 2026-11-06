@@ -1,0 +1,377 @@
+// More "MCU running" demos in the paper style (FOC motor, UART+DMA, 51 port / chase LEDs, LDR+ADC, HC-SR04 echo).
+// Every number on screen comes from one simulated state so picture, readouts and narration stay consistent.
+import React from 'react';
+import {INK, GREEN, ORANGE, RED} from './Video4';
+import {FONT} from './Video';
+
+const BG_DARK = '#15222B', TRACE_G = '#6BFFA8', PINK = '#E86FA8', BLUE = '#2160D6', GREY = '#7B8C95';
+const PI = Math.PI;
+const rad = (d: number) => (d * PI) / 180;
+
+export const Card: React.FC<{x: number; y: number; w: number; h: number; children: React.ReactNode; dark?: boolean}> = ({x, y, w, h, children, dark}) => (
+  <div style={{position: 'absolute', left: x, top: y, width: w, height: h, borderRadius: 28, border: `5px solid ${INK}`, background: dark ? BG_DARK : '#fff', boxShadow: '0 14px 30px rgba(35,50,60,0.16)', overflow: 'hidden'}}>{children}</div>
+);
+const Note: React.FC<{y: number; x?: number}> = ({y, x = 250}) => (
+  <div style={{position: 'absolute', left: x, right: 60, top: y, textAlign: 'center', fontFamily: FONT, fontSize: 28, color: '#5C7380', fontWeight: 700}}>动画为原理示意，非真实测量</div>
+);
+const lerp = (a: number, b: number, t: number) => a + (b - a) * Math.min(1, Math.max(0, t));
+// keys [{beat, v}] -> value at frame f, ramping over `ramp` frames when the beat starts
+export const valueAt = (keys: {beat: number; v: number}[], b: number[], f: number, ramp = 30) => {
+  let v = keys[0].v;
+  for (let i = 1; i < keys.length; i++) { const t = b[keys[i].beat] ?? 0; if (f >= t) v = lerp(keys[i - 1].v, keys[i].v, (f - t) / ramp); }
+  return v;
+};
+
+/* ============================ FOC ============================ */
+type Phase = {beat: number; mode: 'square' | 'sine' | 'dq'};
+const FPERIOD = 150;                                   // frames per electrical revolution of the field
+const simulateFoc = (phases: Phase[], b: number[], iq: {beat: number; v: number}[] | undefined, fEnd: number) => {
+  const phi: number[] = [], th: number[] = [], mode: ('square' | 'sine' | 'dq')[] = [];
+  let ph = 0, t = 0, w = 0;
+  for (let f = 0; f <= fEnd; f++) {
+    let m = phases[0].mode;
+    for (const p of phases) if (f >= (b[p.beat] ?? 0)) m = p.mode;
+    mode.push(m);
+    let field: number;
+    if (m === 'dq') {
+      const q = iq ? valueAt(iq, b, f, 40) : 0.5;
+      w = 0.018 + 0.05 * q; t += w; field = t + PI / 2;      // field kept 90 degrees ahead of the rotor
+    } else {
+      ph += (2 * PI) / FPERIOD;
+      field = m === 'square' ? rad(60 * Math.floor(((ph * 180) / PI) / 60) + 30) : ph;
+      const K = 0.012, C = 0.055;                              // rotor = damped spring chasing the field
+      const err = Math.atan2(Math.sin(field - t), Math.cos(field - t));
+      w += K * Math.sin(err) * 6 - C * w; t += w;
+    }
+    phi.push(field); th.push(t);
+  }
+  return {phi, th, mode};
+};
+const phaseCurrents = (phi: number, m: string) => {
+  const ax = [0, rad(120), rad(240)];
+  if (m === 'square') { const q = phi; return ax.map((a) => Math.round(Math.cos(q - a) / 0.866)); }
+  return ax.map((a) => Math.cos(phi - a));
+};
+const PCOL = [ORANGE, '#2BA866', PINK];
+
+const MotorSvg: React.FC<{phi: number; th: number; m: string; cur: number[]; ripple: number}> = ({phi, th, m, cur}) => {
+  const cx = 300, cy = 270;
+  const coils = [[0, 0], [60, 2], [120, 1], [180, 0], [240, 2], [300, 1]];       // [angle deg, phase]
+  return (
+    <svg width={960} height={540} viewBox="0 0 960 540">
+      <circle cx={cx} cy={cy} r={236} fill="#B9C6CC" stroke={INK} strokeWidth={6} />
+      <circle cx={cx} cy={cy} r={150} fill="#E8EEF0" stroke={INK} strokeWidth={5} />
+      {coils.map(([a, p]) => {
+        const g = Math.abs(cur[p]);
+        const x = cx + Math.cos(rad(a)) * 193, y = cy - Math.sin(rad(a)) * 193;
+        return (
+          <g key={a} transform={`translate(${x},${y}) rotate(${-a})`}>
+            {g > 0.05 && <rect x={-52} y={-60} width={104} height={120} rx={22} fill={PCOL[p]} opacity={0.32 * g} />}
+            <rect x={-40} y={-46} width={80} height={92} rx={16} fill={PCOL[p]} stroke={INK} strokeWidth={4} opacity={0.35 + 0.65 * g} />
+            <text x={0} y={12} textAnchor="middle" fontFamily={FONT} fontWeight={900} fontSize={34} fill={INK} transform={`rotate(${a})`}>{'ABC'[p]}</text>
+          </g>
+        );
+      })}
+      <g transform={`translate(${cx},${cy}) rotate(${-(th * 180) / PI})`}>
+        <circle r={104} fill="#fff" stroke={INK} strokeWidth={5} />
+        <path d="M0 -104 A104 104 0 0 1 0 104 Z" fill="#E0524A" /><path d="M0 -104 A104 104 0 0 0 0 104 Z" fill="#3C7DE0" />
+        <circle r={104} fill="none" stroke={INK} strokeWidth={5} />
+        <text x={46} y={14} textAnchor="middle" fontFamily={FONT} fontWeight={900} fontSize={42} fill="#fff">N</text>
+        <text x={-46} y={14} textAnchor="middle" fontFamily={FONT} fontWeight={900} fontSize={42} fill="#fff">S</text>
+        <circle r={14} fill={INK} />
+      </g>
+      {/* stator field arrow */}
+      <g transform={`translate(${cx},${cy}) rotate(${-(phi * 180) / PI})`}>
+        <line x1={0} y1={0} x2={210} y2={0} stroke={ORANGE} strokeWidth={12} strokeLinecap="round" />
+        <path d="M232 0 L196 -26 L196 26 Z" fill={ORANGE} stroke={INK} strokeWidth={3} strokeLinejoin="round" />
+      </g>
+      {/* legend / state */}
+      <text x={600} y={90} fontFamily={FONT} fontWeight={900} fontSize={m === 'dq' ? 34 : 40} fill={INK}>{m === 'square' ? '方波驱动' : m === 'sine' ? 'FOC 正弦驱动' : 'd=0，只调 q'}</text>
+      <g fontFamily={FONT} fontWeight={800} fontSize={34}>
+        <rect x={600} y={130} width={30} height={30} rx={8} fill={ORANGE} stroke={INK} strokeWidth={3} /><text x={644} y={158} fill={INK}>磁场方向</text>
+        <rect x={600} y={184} width={30} height={30} rx={8} fill="#E0524A" stroke={INK} strokeWidth={3} /><text x={644} y={212} fill={INK}>转子 N 极</text>
+        <rect x={600} y={238} width={30} height={30} rx={8} fill="#fff" stroke={INK} strokeWidth={3} /><text x={644} y={266} fill={INK}>定子线圈 A B C</text>
+      </g>
+      {m === 'dq' && <text x={600} y={340} fontFamily={FONT} fontWeight={900} fontSize={32} fill={GREEN}>磁场领先转子 90°</text>}
+    </svg>
+  );
+};
+
+export const FocDemo: React.FC<{f: number; b: number[]; sc: any}> = ({f, b, sc}) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const phases: Phase[] = sc.phases ?? [{beat: 0, mode: 'sine'}];
+  const sim = simulateFoc(phases, b, sc.iq, f);
+  const phi = sim.phi[f], th = sim.th[f], m = sim.mode[f];
+  const cur = phaseCurrents(phi, m);
+  // ripple = how far the rotor swings away from the field over the last 40 frames
+  let mn = 9, mx = -9;
+  for (let k = Math.max(0, f - 40); k <= f; k++) { const e = Math.atan2(Math.sin(sim.phi[k] - sim.th[k]), Math.cos(sim.phi[k] - sim.th[k])); mn = Math.min(mn, e); mx = Math.max(mx, e); }
+  const ripple = mx - mn;
+  // scope: past currents
+  const SW = 900, SH = 250, SP = 3.0;
+  const traces = [0, 1, 2].map((p) => {
+    let d = '';
+    for (let px = 0; px <= SW; px += 4) {
+      const tp = Math.max(0, Math.round(f - (SW - px) / SP));
+      const c = phaseCurrents(sim.phi[tp], sim.mode[tp])[p];
+      const y = SH / 2 - c * (SH / 2 - 26);
+      d += (px === 0 ? 'M' : 'L') + px + ' ' + y.toFixed(1);
+    }
+    return d;
+  });
+  const iq = sc.iq ? valueAt(sc.iq, b, f, 40) : 0;
+  return (
+    <>
+      <Card x={60} y={330} w={960} h={560}><MotorSvg phi={phi} th={th} m={m} cur={cur} ripple={ripple} /></Card>
+      {m !== 'dq' ? (
+        <Card x={60} y={920} w={960} h={330} dark>
+          <div style={{padding: '14px 30px 0', fontFamily: FONT, fontWeight: 900, fontSize: 32, color: '#fff'}}>三相电流 <span style={{color: ORANGE}}>A</span> <span style={{color: '#5EE0A0'}}>B</span> <span style={{color: PINK}}>C</span></div>
+          <svg width={SW} height={SH} viewBox={`0 0 ${SW} ${SH}`} style={{marginLeft: 30}}>
+            <line x1={0} x2={SW} y1={SH / 2} y2={SH / 2} stroke="#233744" strokeWidth={2} />
+            {traces.map((d, i) => <path key={i} d={d} fill="none" stroke={i === 1 ? '#5EE0A0' : PCOL[i]} strokeWidth={5} strokeLinejoin="round" />)}
+          </svg>
+          <div style={{position: 'absolute', right: 40, top: 12, fontFamily: FONT, fontWeight: 900, fontSize: 34, color: ripple > 0.5 ? '#FF8A7A' : TRACE_G}}>转矩波动：{ripple > 0.5 ? '大' : '小'}</div>
+        </Card>
+      ) : (
+        <Card x={60} y={920} w={960} h={330}>
+          <div style={{padding: '20px 36px', fontFamily: FONT}}>
+            <div style={{fontSize: 36, fontWeight: 900, color: INK}}>电流 d 轴 <span style={{color: GREY}}>d = 0</span>（不产生力矩）</div>
+            <div style={{marginTop: 10, height: 30, borderRadius: 15, background: '#E3E8ED', border: `4px solid ${INK}`}} />
+            <div style={{marginTop: 22, fontSize: 36, fontWeight: 900, color: INK}}>电流 q 轴 <span style={{color: ORANGE}}>q = {iq.toFixed(1)}</span>　→　力矩 ↑　转速 ↑</div>
+            <div style={{marginTop: 10, height: 30, borderRadius: 15, background: '#E3E8ED', border: `4px solid ${INK}`, overflow: 'hidden'}}><div style={{width: `${iq * 100}%`, height: '100%', background: ORANGE}} /></div>
+          </div>
+        </Card>
+      )}
+      <Note y={1262} />
+    </>
+  );
+};
+
+/* ============================ UART + DMA ============================ */
+const WORD = 'HELLO,DMA!';
+type Sim = {arrive: number[]; read: (number | null)[]; lost: boolean[]};
+const simulateUart = (mode: 'cpu' | 'dma', period: number, start: number, busy: [number, number][]): Sim => {
+  const n = WORD.length, arrive = Array.from({length: n}, (_, i) => start + i * period);
+  const read: (number | null)[] = [], lost: boolean[] = [];
+  for (let i = 0; i < n; i++) {
+    if (mode === 'dma') { read.push(arrive[i] + 6); lost.push(false); continue; }
+    let t = arrive[i] + 4;
+    for (const [a, c] of busy) if (t >= a && t < c) t = c + 4;
+    const next = i + 1 < n ? arrive[i + 1] : 1e9;
+    if (t >= next) { read.push(null); lost.push(true); } else { read.push(t); lost.push(false); }
+  }
+  return {arrive, read, lost};
+};
+export const DmaDemo: React.FC<{f: number; b: number[]; sc: any}> = ({f, sc}) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const mode: 'cpu' | 'dma' = sc.mode === 'dma' ? 'dma' : 'cpu';
+  const period = sc.period ?? 30, start = sc.start ?? 16;
+  const busy: [number, number][] = sc.busy ?? [[70, 160], [220, 300]];
+  const sim = simulateUart(mode, period, start, busy);
+  const cell = (k: number) => ({x: 56 + k * 88, y: 520});
+  const DR = {x: 170, y: 262};
+  const FLY = 14;
+  const toks: React.ReactNode[] = [];
+  let received = '', lostN = 0, irq = 0;
+  WORD.split('').forEach((ch, i) => {
+    const ta = sim.arrive[i];
+    const lostHere = sim.lost[i], rt = sim.read[i];
+    // incoming: from the wire to DR
+    if (f >= ta - FLY && f < ta) { const u = (f - (ta - FLY)) / FLY; toks.push(<Tok key={'a' + i} x={lerp(70, DR.x, u)} y={lerp(70, DR.y, u)} ch={ch} />); }
+    // sitting in DR
+    const stillIn = f >= ta && (lostHere ? f < sim.arrive[i + 1] : rt !== null && f < rt);
+    if (stillIn) toks.push(<Tok key={'d' + i} x={DR.x} y={DR.y} ch={ch} />);
+    if (lostHere && f >= sim.arrive[i + 1]) { lostN += f >= sim.arrive[i + 1] ? 1 : 0; if (f < sim.arrive[i + 1] + 24) toks.push(<text key={'x' + i} x={330} y={DR.y + 14} fontFamily={FONT} fontWeight={900} fontSize={40} fill={RED}>丢！</text>); }
+    // moving to the buffer
+    if (rt !== null && f >= rt && f < rt + FLY) { const u = (f - rt) / FLY, c = cell(i); toks.push(<Tok key={'m' + i} x={lerp(DR.x, c.x + 40, u)} y={lerp(DR.y, c.y + 34, u)} ch={ch} g={mode === 'dma'} />); }
+    if (rt !== null && f >= rt + FLY) { received += ch; }
+    else if (lostHere && f >= sim.arrive[i + 1]) received += '?';
+    else received += '';
+    if (rt !== null && f >= rt) irq += mode === 'cpu' ? 1 : 0;
+  });
+  const isBusy = mode === 'cpu' && busy.some(([a, c]) => f >= a && f < c);
+  const done = f >= (sim.read[WORD.length - 1] ?? 0) + FLY;
+  if (mode === 'dma' && done) irq = 1;
+  return (
+    <>
+      <Card x={60} y={330} w={960} h={640}>
+        <svg width={960} height={640} viewBox="0 0 960 640">
+          <text x={30} y={46} fontFamily={FONT} fontWeight={900} fontSize={32} fill={GREY}>对方不停发送 →</text>
+          <rect x={40} y={190} width={260} height={190} rx={22} fill="#FFD9A8" stroke={INK} strokeWidth={5} />
+          <text x={170} y={226} textAnchor="middle" fontFamily={FONT} fontWeight={900} fontSize={34} fill={INK}>串口 USART1</text>
+          <rect x={110} y={236} width={120} height={80} rx={12} fill="#fff" stroke={INK} strokeWidth={4} strokeDasharray="10 8" />
+          <text x={170} y={352} textAnchor="middle" fontFamily={FONT} fontWeight={800} fontSize={30} fill={INK}>数据寄存器 DR</text>
+          {/* CPU */}
+          <rect x={400} y={50} width={250} height={160} rx={22} fill="#CFE3F2" stroke={INK} strokeWidth={5} />
+          <text x={525} y={92} textAnchor="middle" fontFamily={FONT} fontWeight={900} fontSize={36} fill={INK}>CPU</text>
+          <rect x={425} y={112} width={200} height={26} rx={13} fill="#fff" stroke={INK} strokeWidth={3} />
+          <rect x={427} y={114} width={isBusy || mode === 'dma' ? 20 + ((f * 4) % 176) : 0} height={22} rx={11} fill={isBusy ? RED : GREEN} />
+          <text x={525} y={188} textAnchor="middle" fontFamily={FONT} fontWeight={800} fontSize={30} fill={isBusy ? RED : INK}>{isBusy ? '忙：正在刷屏幕' : mode === 'dma' ? '专心刷屏幕' : '空闲'}</text>
+          {mode === 'dma' && (
+            <g><rect x={400} y={250} width={250} height={130} rx={22} fill="#BFEBD0" stroke={INK} strokeWidth={5} />
+              <text x={525} y={300} textAnchor="middle" fontFamily={FONT} fontWeight={900} fontSize={38} fill={INK}>DMA</text>
+              <text x={525} y={346} textAnchor="middle" fontFamily={FONT} fontWeight={800} fontSize={30} fill={INK}>专职搬运工</text></g>
+          )}
+          {/* buffer */}
+          <text x={56} y={500} fontFamily={FONT} fontWeight={900} fontSize={32} fill={INK}>内存数组 buf[0] ~ buf[9]</text>
+          {WORD.split('').map((_, k) => { const c = cell(k); return <rect key={k} x={c.x} y={c.y} width={80} height={68} rx={10} fill="#EEF7F0" stroke={INK} strokeWidth={4} />; })}
+          {WORD.split('').map((ch, k) => { const c = cell(k); const rt = sim.read[k]; const lostK = sim.lost[k]; const show = rt !== null && f >= rt + FLY; const lostShow = lostK && f >= sim.arrive[k + 1];
+            return (show || lostShow) ? <text key={k} x={c.x + 40} y={c.y + 48} textAnchor="middle" fontFamily="Consolas,monospace" fontWeight={900} fontSize={46} fill={lostShow ? RED : INK}>{lostShow ? '?' : ch}</text> : null; })}
+          {toks}
+        </svg>
+      </Card>
+      <Card x={60} y={1000} w={960} h={230}>
+        <div style={{padding: '18px 36px', fontFamily: FONT}}>
+          <div style={{fontSize: 38, fontWeight: 900, color: INK}}>收到：<span style={{fontFamily: 'Consolas,monospace', color: received.includes('?') ? RED : GREEN, letterSpacing: 4}}>{received || '…'}</span></div>
+          <div style={{marginTop: 14, fontSize: 36, fontWeight: 900, color: INK}}>
+            {mode === 'cpu' ? <>丢字 <span style={{color: RED}}>{lostN}</span> 个　·　CPU 被打断 <span style={{color: ORANGE}}>{irq}</span> 次</> : <>丢字 <span style={{color: GREEN}}>0</span> 个　·　搬完通知 CPU <span style={{color: GREEN}}>{irq}</span> 次</>}
+          </div>
+        </div>
+      </Card>
+      <Note y={1250} />
+    </>
+  );
+};
+const Tok: React.FC<{x: number; y: number; ch: string; g?: boolean}> = ({x, y, ch, g}) => (
+  <g transform={`translate(${x - 34},${y - 30})`}><rect width={68} height={60} rx={10} fill={g ? '#BFEBD0' : '#FFE9B8'} stroke={INK} strokeWidth={4} />
+    <text x={34} y={44} textAnchor="middle" fontFamily="Consolas,monospace" fontWeight={900} fontSize={42} fill={INK}>{ch}</text></g>
+);
+
+/* ============================ 51 port ============================ */
+export const PortDemo: React.FC<{f: number; b: number[]; sc: any}> = ({f, b, sc}) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const phases: {beat: number; mode: 'fixed' | 'chase'; value?: number}[] = sc.phases ?? [{beat: 0, mode: 'fixed', value: 0xff}];
+  let value = phases[0].value ?? 0xff, mode: 'fixed' | 'chase' = phases[0].mode, t0 = 0;
+  for (const p of phases) { const t = b[p.beat] ?? 0; if (f >= t) { mode = p.mode; if (p.mode === 'fixed') value = p.value ?? 0xff; else { value = p.value ?? 0xfe; t0 = t; } } }
+  if (mode === 'chase') { const step = Math.floor((f - t0) / 22); const s = ((step % 8) + 8) % 8; value = (((0xfe << s) | (0xfe >> (8 - s))) & 0xff); }
+  const bits = Array.from({length: 8}, (_, i) => (value >> (7 - i)) & 1);              // bit7 .. bit0
+  const hex = '0x' + value.toString(16).toUpperCase().padStart(2, '0');
+  return (
+    <>
+      <Card x={60} y={330} w={960} h={460}>
+        <svg width={960} height={460} viewBox="0 0 960 460">
+          <rect x={30} y={50} width={900} height={60} rx={14} fill="#2160D6" stroke={INK} strokeWidth={5} />
+          <text x={480} y={92} textAnchor="middle" fontFamily={FONT} fontWeight={900} fontSize={34} fill="#fff">STC89C52 · P2 口（8 根引脚）</text>
+          {Array.from({length: 8}, (_, k) => { const bit = 7 - k; const low = ((value >> bit) & 1) === 0; const x = 80 + k * 110;
+            return (
+              <g key={k}>
+                <line x1={x} y1={110} x2={x} y2={210} stroke={INK} strokeWidth={8} strokeLinecap="round" />
+                <circle cx={x} cy={290} r={low ? 62 : 36} fill="#FF6A4A" opacity={low ? 0.3 : 0} />
+                <path d={`M${x - 30} 290 V250 a30 30 0 0 1 60 0 V290 Z`} fill={low ? '#FF5A4A' : '#8A3A36'} stroke={INK} strokeWidth={5} strokeLinejoin="round" />
+                <line x1={x} y1={290} x2={x} y2={330} stroke={INK} strokeWidth={6} />
+                <text x={x} y={376} textAnchor="middle" fontFamily={FONT} fontWeight={900} fontSize={30} fill={INK}>P2.{bit}</text>
+                <text x={x} y={416} textAnchor="middle" fontFamily={FONT} fontWeight={800} fontSize={30} fill={low ? RED : GREY}>{low ? '亮' : '灭'}</text>
+              </g>);
+          })}
+        </svg>
+      </Card>
+      <Card x={60} y={820} w={960} h={330} dark>
+        <div style={{padding: '22px 36px', fontFamily: FONT}}>
+          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline'}}>
+            <span style={{fontSize: 40, fontWeight: 900, color: '#fff'}}>P2 = <span style={{color: ORANGE, fontFamily: 'Consolas,monospace'}}>{hex}</span></span>
+            <span style={{fontSize: 30, fontWeight: 800, color: '#9BD8B5'}}>写 1 = 高电平　写 0 = 低电平</span>
+          </div>
+          <div style={{display: 'flex', gap: 10, marginTop: 18}}>
+            {bits.map((bt, i) => (
+              <div key={i} style={{flex: 1, textAlign: 'center'}}>
+                <div style={{fontSize: 26, fontWeight: 800, color: '#9BD8B5'}}>{7 - i}</div>
+                <div style={{marginTop: 6, fontFamily: 'Consolas,monospace', fontSize: 62, fontWeight: 900, padding: '8px 0', borderRadius: 14, background: bt ? '#23404D' : '#5A2A2A', color: bt ? TRACE_G : '#FF8A7A', border: `4px solid ${bt ? '#3B6B7F' : '#A04A4A'}`}}>{bt}</div>
+              </div>))}
+          </div>
+          <div style={{marginTop: 18, fontFamily: 'Consolas,monospace', fontSize: 32, color: '#C9D8E0'}}>{mode === 'chase' ? 'P2 = _crol_(P2, 1);  // 每次左移一位' : `P2 = ${hex};`}</div>
+        </div>
+      </Card>
+      <Note y={1170} />
+    </>
+  );
+};
+
+/* ============================ LDR + ADC ============================ */
+export const AdcDemo: React.FC<{f: number; b: number[]; sc: any}> = ({f, b, sc}) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const L = valueAt(sc.light ?? [{beat: 0, v: 0.2}], b, f, 40);              // 0 dark .. 1 bright
+  const rLdr = 100000 * Math.pow(0.02, L);                                     // 100 k (dark) .. 2 k (bright)
+  const rFix = 10000;
+  const v = 3.3 * rFix / (rFix + rLdr);
+  const adc = Math.round((v / 3.3) * 4095);
+  return (
+    <>
+      <Card x={60} y={330} w={960} h={520}>
+        <svg width={960} height={520} viewBox="0 0 960 520">
+          {/* light source */}
+          <circle cx={130} cy={150} r={44 + 46 * L} fill="#FFD84A" opacity={0.25} />
+          <circle cx={130} cy={150} r={44} fill="#FFC93C" stroke={INK} strokeWidth={5} />
+          {Array.from({length: 8}, (_, i) => <line key={i} x1={130 + Math.cos(i * PI / 4) * 66} y1={150 + Math.sin(i * PI / 4) * 66} x2={130 + Math.cos(i * PI / 4) * (66 + 14 + 40 * L)} y2={150 + Math.sin(i * PI / 4) * (66 + 14 + 40 * L)} stroke="#FFC93C" strokeWidth={7} strokeLinecap="round" opacity={0.4 + 0.6 * L} />)}
+          <text x={130} y={290} textAnchor="middle" fontFamily={FONT} fontWeight={900} fontSize={34} fill={INK}>光线 {Math.round(L * 100)}%</text>
+          {/* divider */}
+          <text x={520} y={60} textAnchor="middle" fontFamily={FONT} fontWeight={900} fontSize={32} fill={RED}>+3.3V</text>
+          <line x1={520} y1={74} x2={520} y2={110} stroke={INK} strokeWidth={6} />
+          <rect x={470} y={110} width={100} height={110} rx={24} fill="#F1D9A8" stroke={INK} strokeWidth={5} />
+          <path d="M486 150 l26 0 M486 168 l26 0 M486 186 l26 0" stroke={INK} strokeWidth={4} />
+          <text x={592} y={174} fontFamily={FONT} fontWeight={800} fontSize={32} fill={INK}>光敏电阻 {(rLdr / 1000).toFixed(1)}kΩ</text>
+          <line x1={520} y1={220} x2={520} y2={270} stroke={INK} strokeWidth={6} />
+          <circle cx={520} cy={270} r={11} fill={ORANGE} stroke={INK} strokeWidth={4} />
+          <line x1={520} y1={270} x2={760} y2={270} stroke={INK} strokeWidth={6} />
+          <text x={780} y={282} fontFamily={FONT} fontWeight={900} fontSize={34} fill={ORANGE}>→ 接 ADC 引脚</text>
+          <line x1={520} y1={270} x2={520} y2={310} stroke={INK} strokeWidth={6} />
+          <rect x={480} y={310} width={80} height={96} rx={20} fill="#fff" stroke={INK} strokeWidth={5} />
+          <text x={592} y={366} fontFamily={FONT} fontWeight={800} fontSize={32} fill={INK}>固定电阻 10kΩ</text>
+          <line x1={520} y1={406} x2={520} y2={450} stroke={INK} strokeWidth={6} />
+          <line x1={490} y1={450} x2={550} y2={450} stroke={INK} strokeWidth={6} /><line x1={500} y1={464} x2={540} y2={464} stroke={INK} strokeWidth={5} /><line x1={510} y1={478} x2={530} y2={478} stroke={INK} strokeWidth={4} />
+          {[0, 1, 2].map((k) => { const tt = ((f * 5 + k * 40) % 120) / 120; return <circle key={k} cx={520} cy={74 + tt * 380} r={7} fill={ORANGE} opacity={0.85} />; })}
+        </svg>
+      </Card>
+      <Card x={60} y={880} w={960} h={330} dark>
+        <div style={{padding: '24px 36px', fontFamily: FONT, color: '#fff'}}>
+          <div style={{fontSize: 40, fontWeight: 900}}>分压电压 <span style={{color: ORANGE}}>{v.toFixed(2)} V</span></div>
+          <div style={{marginTop: 10, height: 26, borderRadius: 13, background: '#233744'}}><div style={{width: `${(v / 3.3) * 100}%`, height: '100%', borderRadius: 13, background: ORANGE}} /></div>
+          <div style={{marginTop: 22, fontSize: 40, fontWeight: 900}}>ADC 读数 <span style={{color: TRACE_G, fontFamily: 'Consolas,monospace'}}>{adc}</span> <span style={{fontSize: 28, color: '#9BD8B5'}}>（0 ~ 4095）</span></div>
+          <div style={{marginTop: 10, height: 26, borderRadius: 13, background: '#233744'}}><div style={{width: `${(adc / 4095) * 100}%`, height: '100%', borderRadius: 13, background: TRACE_G}} /></div>
+          <div style={{marginTop: 16, fontSize: 28, fontWeight: 700, color: '#C9D8E0'}}>ADC = 电压 ÷ 3.3V × 4095（12 位）</div>
+        </div>
+      </Card>
+      <Note y={1230} />
+    </>
+  );
+};
+
+/* ============================ HC-SR04 echo ============================ */
+export const EchoDemo: React.FC<{f: number; b: number[]; sc: any}> = ({f, b, sc}) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const d = valueAt(sc.dist ?? [{beat: 0, v: 25}], b, f, 40);                      // cm
+  const tUs = (d * 2 / 0.034);                                                       // round-trip time in microseconds
+  const px = 180 + (d / 60) * 560;                                                   // obstacle x
+  const cyc = 60, ph = (f % cyc) / cyc;                                              // one measurement every 60 frames
+  const out = Math.min(1, ph / 0.45), back = ph > 0.45 ? Math.min(1, (ph - 0.45) / 0.45) : 0;
+  const SW = 900, SH = 170;
+  const echoW = (tUs / 3500) * 520;
+  return (
+    <>
+      <Card x={60} y={330} w={960} h={430}>
+        <svg width={960} height={430} viewBox="0 0 960 430">
+          <rect x={30} y={130} width={150} height={170} rx={18} fill="#FFC93C" stroke={INK} strokeWidth={5} />
+          <circle cx={78} cy={190} r={32} fill="#E8EEF0" stroke={INK} strokeWidth={5} /><circle cx={78} cy={190} r={12} fill={INK} />
+          <circle cx={132} cy={190} r={32} fill="#E8EEF0" stroke={INK} strokeWidth={5} /><circle cx={132} cy={190} r={12} fill={INK} />
+          <text x={105} y={268} textAnchor="middle" fontFamily={FONT} fontWeight={900} fontSize={26} fill={INK}>HC-SR04</text>
+          <rect x={px} y={80} width={46} height={270} rx={10} fill="#9FB3BB" stroke={INK} strokeWidth={5} />
+          <text x={px + 23} y={392} textAnchor="middle" fontFamily={FONT} fontWeight={800} fontSize={28} fill={INK}>障碍物</text>
+          {out < 1 && [0, 1, 2].map((k) => <path key={k} d={`M${200 + out * (px - 200) - k * 40} 160 q 24 30 0 60`} stroke={ORANGE} strokeWidth={6} fill="none" strokeLinecap="round" opacity={1 - k * 0.3} />)}
+          {back > 0 && back < 1 && [0, 1, 2].map((k) => <path key={k} d={`M${px - back * (px - 200) + k * 40} 160 q -24 30 0 60`} stroke="#2BA866" strokeWidth={6} fill="none" strokeLinecap="round" opacity={1 - k * 0.3} />)}
+          <line x1={190} x2={px} y1={330} y2={330} stroke={INK} strokeWidth={4} strokeDasharray="10 8" />
+          <text x={(190 + px) / 2} y={318} textAnchor="middle" fontFamily={FONT} fontWeight={900} fontSize={34} fill={INK}>{d.toFixed(1)} cm</text>
+          <text x={500} y={60} fontFamily={FONT} fontWeight={800} fontSize={30} fill={ORANGE}>→ 发出 40kHz 声波</text>
+          <text x={500} y={102} fontFamily={FONT} fontWeight={800} fontSize={30} fill="#2BA866">← 碰到后弹回</text>
+        </svg>
+      </Card>
+      <Card x={60} y={790} w={960} h={370} dark>
+        <div style={{padding: '12px 30px 0', fontFamily: FONT, fontWeight: 900, fontSize: 32, color: '#fff'}}>引脚信号</div>
+        <svg width={SW} height={SH} viewBox={`0 0 ${SW} ${SH}`} style={{marginLeft: 30}}>
+          <text x={0} y={22} fontFamily={FONT} fontWeight={800} fontSize={26} fill="#9BD8B5">Trig</text>
+          <text x={0} y={112} fontFamily={FONT} fontWeight={800} fontSize={26} fill="#9BD8B5">Echo</text>
+          <path d={`M90 62 H150 V22 H190 V62 H${SW}`} fill="none" stroke={ORANGE} strokeWidth={5} />
+          <text x={300} y={50} fontFamily={FONT} fontWeight={800} fontSize={24} fill={ORANGE}>10µs 触发脉冲</text>
+          <path d={`M90 150 H300 V104 H${300 + echoW} V150 H${SW}`} fill="none" stroke={TRACE_G} strokeWidth={5} />
+          <path d={`M300 92 v-8 H${300 + echoW} v8`} stroke="#fff" strokeWidth={3} fill="none" />
+        </svg>
+        <div style={{padding: '4px 36px 0', fontFamily: FONT, fontWeight: 900, fontSize: 36, color: '#fff'}}>Echo 高电平 <span style={{color: TRACE_G}}>{Math.round(tUs)} µs</span></div>
+        <div style={{padding: '6px 36px 0', fontFamily: FONT, fontWeight: 900, fontSize: 36, color: '#fff'}}>距离 = {Math.round(tUs)} × 0.034 ÷ 2 = <span style={{color: ORANGE}}>{d.toFixed(1)} cm</span></div>
+      </Card>
+      <Note y={1180} />
+    </>
+  );
+};
